@@ -46,8 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/pyq <year>            - sends Paper 1 & 2 (if available), e.g. /pyq 2014\n"
         "/pyq <year> <1|2>      - sends a specific paper, e.g. /pyq 2019 1\n"
         "Available years: official archive goes back to 2007.\n\n"
-        f"Redirect target: {BLOG_REDIRECT}\n"
-        "Set SEND_DIRECT=true to continue sending PDFs directly to Telegram."
+       
     )
 
 
