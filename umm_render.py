@@ -46,7 +46,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/pyq <year>            - sends Paper 1 & 2 (if available), e.g. /pyq 2014\n"
         "/pyq <year> <1|2>      - sends a specific paper, e.g. /pyq 2019 1\n"
         "Available years: official archive goes back to 2007.\n\n"
-       
+        f"Redirect target: {BLOG_REDIRECT}\n"
+        "Set SEND_DIRECT=true to continue sending PDFs directly to Telegram."
     )
 
 
@@ -112,6 +113,22 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("pyq", pyq))
     print("Bot started. Use /pyq <year> [paper].")
+
+    # Start Flask keep-alive server in a thread
+    from flask import Flask
+    from threading import Thread
+
+    flask_app = Flask(__name__)
+
+    @flask_app.route('/')
+    def home():
+        return "Bot is running!"
+
+    def run():
+        flask_app.run(host="0.0.0.0", port=8080)
+
+    Thread(target=run).start()
+
     app.run_polling()
 
 
