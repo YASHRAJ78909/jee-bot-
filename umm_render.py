@@ -4,6 +4,8 @@ from datetime import datetime
 from urllib.parse import quote_plus
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from flask import Flask
+import threading
 
 # ========= CONFIG =========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -118,6 +120,18 @@ def main():
     app.run_polling()
 
 
+# Flask keep-alive server
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 Bot is running ✅"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 if __name__ == "__main__":
+    # Start Flask in another thread so it doesn’t block the bot
+    threading.Thread(target=run_flask).start()
     main()
-    
