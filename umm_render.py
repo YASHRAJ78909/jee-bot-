@@ -1,134 +1,120 @@
 import os
-import io
 import logging
-from typing import List
-import requests
+from datetime import datetime
 from urllib.parse import quote_plus
-from telegram import Update, InputFile
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# -------- CONFIG ----------
+# ========= CONFIG =========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-BASE = os.environ.get("JEE_BASE", "https://jeeadv.ac.in/past_qps")
-BLOG_REDIRECT = os.environ.get("BLOG_REDIRECT", "https://onlinemoneymakers123.blogspot.com")
-SEND_DIRECT = os.environ.get("SEND_DIRECT", "false").lower() == "true"
+BLOG_REDIRECT = "https://onlinemoneymakers123.blogspot.com"
 LOG_LEVEL = logging.INFO
-# --------------------------
+# ==========================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=LOG_LEVEL
 )
 logger = logging.getLogger(__name__)
 
+START_YEAR = 2007
+CURRENT_YEAR = datetime.now().year
 
-def candidate_urls(year: str, paper: str = None) -> List[str]:
-    yr = year.strip()
-    patterns = []
-    papers = [paper] if paper in ("1", "2") else ["1", "2"]
-    suffixes = ["", "_English", "_Hindi"]
-    for p in papers:
-        for s in suffixes:
-            patterns.append(f"{BASE}/{yr}_{p}{s}.pdf")
-        patterns.append(f"{BASE}/{yr}{p}.pdf")
-    seen = []
-    out = []
-    for u in patterns:
-        if u not in seen:
-            seen.append(u)
-            out.append(u)
-    return out
+# Latest CBSE SQP pages
+CLASS10_LATEST = "https://cbseacademic.nic.in/sqp_classx_2023-24.html"
+CLASS12_LATEST = "https://cbseacademic.nic.in/sqp_classxii_2023-24.html"
+
+
+def main_menu():
+    """Return the main menu keyboard."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📕 JEE Advanced PYQs", callback_data="cat_jee_advanced")],
+            [InlineKeyboardButton("📘 Class 10 SQPs", callback_data="cat_class_10")],
+            [InlineKeyboardButton("📗 Class 12 SQPs", callback_data="cat_class_12")],
+        ]
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "✅ JEE-PYQ Bot ready.\n"
-        "Usage:\n"
-        "/pyq <year>            - sends Paper 1 & 2 (if available), e.g. /pyq 2014\n"
-        "/pyq <year> <1|2>      - sends a specific paper, e.g. /pyq 2019 1\n"
-        "Available years: official archive goes back to 2007.\n\n"
-        f"Redirect target: {BLOG_REDIRECT}\n"
-        "Set SEND_DIRECT=true to continue sending PDFs directly to Telegram."
+        "📚 Welcome! Choose a category:", reply_markup=main_menu()
     )
 
 
-async def pyq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /pyq <year> [paper]\nExample: /pyq 2012 1")
-        return
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
 
-    year = context.args[0].strip()
-    paper = context.args[1].strip() if len(context.args) > 1 else None
+    # ---- Main menu ----
+    if data == "back_main":
+        await query.edit_message_text("📚 Back to main menu:", reply_markup=main_menu())
 
-    if not year.isdigit() or int(year) < 2007 or int(year) > 2100:
-        await update.message.reply_text("Please supply a valid year (>=2007). Example: /pyq 2015")
-        return
-
-    urls = candidate_urls(year, paper)
-    await update.message.reply_text(f"🔎 Looking for official JEE (Advanced) papers for {year}...")
-
-    found_any = False
-    tried = []
-    for url in urls:
-        tried.append(url)
-        try:
-            resp = requests.get(url, timeout=15)
-            if resp.status_code == 200 and resp.headers.get("content-type", "").lower().startswith("application/pdf"):
-                fname = url.split("/")[-1]
-                redirect_link = f"{BLOG_REDIRECT.rstrip('/')}/?target={quote_plus(url)}"
-                await update.message.reply_text(f"✅ Found: {fname}\nRedirect link: {redirect_link}")
-                found_any = True
-
-                if SEND_DIRECT:
-                    bio = io.BytesIO(resp.content)
-                    bio.name = fname
-                    bio.seek(0)
-                    await update.message.reply_document(document=InputFile(bio, filename=fname))
-
-                if paper in ("1", "2"):
-                    return
-            else:
-                continue
-        except Exception as e:
-            logger.debug("Error fetching %s : %s", url, e)
-            continue
-
-    if not found_any:
-        msg = (
-            "⚠️ Couldn't find official PDF on the site using common filenames.\n\n"
-            "I tried these URLs (some may exist):\n" + "\n".join(tried[:6]) + "\n\n"
-            "What you can do:\n"
-            f"• If you want to check the link manually, here's a helpful blog redirect template:\n"
-            f"  {BLOG_REDIRECT.rstrip('/')}/?target=<url-encoded-pdf-url>\n\n"
-            "• Visit the official archive: https://jeeadv.ac.in/archive.html\n"
-            "• If you see a working PDF link on that page, paste it here and I can fetch it.\n"
+    # ---- JEE Advanced → Year ----
+    elif data == "cat_jee_advanced":
+        years = [str(y) for y in range(START_YEAR, CURRENT_YEAR + 1)]
+        keyboard = [
+            [InlineKeyboardButton(year, callback_data=f"year_jee_advanced_{year}")]
+            for year in years
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_main")])
+        await query.edit_message_text(
+            "📅 Choose JEE Advanced Year:", reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await update.message.reply_text(msg)
+
+    # ---- JEE Advanced Year → Papers ----
+    elif data.startswith("year_jee_advanced_"):
+        year = data.split("_")[-1]
+        keyboard = [
+            [InlineKeyboardButton("Paper 1", callback_data=f"paper_jee_advanced_{year}_1")],
+            [InlineKeyboardButton("Paper 2", callback_data=f"paper_jee_advanced_{year}_2")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="cat_jee_advanced")],
+        ]
+        await query.edit_message_text(
+            f"📑 Choose Paper ({year}):", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    # ---- JEE Advanced Paper → Redirect ----
+    elif data.startswith("paper_jee_advanced_"):
+        _, _, _, year, paper = data.split("_")
+        url = f"https://jeeadv.ac.in/past_qps/{year}_{paper}_English.pdf"
+        redirect_link = f"{BLOG_REDIRECT.rstrip('/')}/?target={quote_plus(url)}"
+        keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data=f"year_jee_advanced_{year}")]]
+        await query.edit_message_text(
+            f"✅ JEE Advanced {year} - Paper {paper}\n"
+            f"🔗 Redirect link: {redirect_link}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    # ---- Class 10 → Latest SQP Redirect ----
+    elif data == "cat_class_10":
+        redirect_link = f"{BLOG_REDIRECT.rstrip('/')}/?target={quote_plus(CLASS10_LATEST)}"
+        keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data="back_main")]]
+        await query.edit_message_text(
+            f"✅ Class 10 Latest SQPs\n🔗 Redirect link: {redirect_link}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    # ---- Class 12 → Latest SQP Redirect ----
+    elif data == "cat_class_12":
+        redirect_link = f"{BLOG_REDIRECT.rstrip('/')}/?target={quote_plus(CLASS12_LATEST)}"
+        keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data="back_main")]]
+        await query.edit_message_text(
+            f"✅ Class 12 Latest SQPs\n🔗 Redirect link: {redirect_link}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
 
 def main():
     if not BOT_TOKEN:
         print("ERROR: BOT_TOKEN not set in environment variables.")
         return
+
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("pyq", pyq))
-    print("Bot started. Use /pyq <year> [paper].")
+    app.add_handler(CallbackQueryHandler(menu_handler))
 
-    # Start Flask keep-alive server in a thread
-    from flask import Flask
-    from threading import Thread
-
-    flask_app = Flask(__name__)
-
-    @flask_app.route('/')
-    def home():
-        return "Bot is running!"
-
-    def run():
-        flask_app.run(host="0.0.0.0", port=8080)
-
-    Thread(target=run).start()
-
+    print("Bot started ✅ Use /start in Telegram")
     app.run_polling()
 
 
